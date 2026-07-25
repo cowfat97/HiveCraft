@@ -1,0 +1,33 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+*.iws
+*.iml
+*.ipr
+.vscode/
+.settings/
+.project
+.classpath
+*.swp
+*.swo
+*~
+
+# Maven
+target/
+*.jar
+*.war
+
+# Node
+node_modules/
+dist/
+*.log
+
+# Docker
+.env
+
+# Claude
+CLAUDE.md
+.claude/

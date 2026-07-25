@@ -1,0 +1,13 @@
+spring:
+  datasource:
+    driver-class-name: org.postgresql.Driver
+    url: jdbc:postgresql://localhost:5432/agenthub
+    username: postgres
+    password: your_password
+    hikari:
+      minimum-idle: 5
+      maximum-pool-size: 20
+
+mybatis:
+  configuration:
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl

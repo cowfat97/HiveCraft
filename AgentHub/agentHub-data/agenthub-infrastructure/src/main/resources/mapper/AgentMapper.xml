@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.agenthub.infrastructure.mapper.AgentMapper">
+
+    <resultMap id="BaseResultMap" type="com.agenthub.infrastructure.entity.AgentPO">
+        <id property="id" column="id"/>
+        <result property="name" column="name"/>
+        <result property="description" column="description"/>
+        <result property="endpoint" column="endpoint"/>
+        <result property="version" column="version"/>
+        <result property="type" column="type"/>
+        <result property="status" column="status"/>
+        <result property="protocolVersion" column="protocol_version"/>
+        <result property="preferredTransport" column="preferred_transport"/>
+        <result property="capabilities" column="capabilities"/>
+        <result property="securitySchemes" column="security_schemes"/>
+        <result property="security" column="security"/>
+        <result property="provider" column="provider"/>
+        <result property="defaultInputModes" column="default_input_modes"/>
+        <result property="defaultOutputModes" column="default_output_modes"/>
+        <result property="iconUrl" column="icon_url"/>
+        <result property="documentationUrl" column="documentation_url"/>
+        <result property="supportsAuthenticatedExtendedCard" column="supports_authenticated_extended_card"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <sql id="Base_Column_List">
+        id, name, description, endpoint, version, type, status,
+        protocol_version, preferred_transport, capabilities, security_schemes,
+        security, provider, default_input_modes, default_output_modes,
+        icon_url, documentation_url, supports_authenticated_extended_card,
+        created_at, updated_at
+    </sql>
+
+    <insert id="insert" parameterType="com.agenthub.infrastructure.entity.AgentPO">
+        INSERT INTO agents (id, name, description, endpoint, version, type, status,
+            protocol_version, preferred_transport, capabilities, security_schemes,
+            security, provider, default_input_modes, default_output_modes,
+            icon_url, documentation_url, supports_authenticated_extended_card,
+            created_at, updated_at)
+        VALUES (#{id}, #{name}, #{description}, #{endpoint}, #{version}, #{type}, #{status},
+            #{protocolVersion}, #{preferredTransport}, #{capabilities}, #{securitySchemes},
+            #{security}, #{provider}, #{defaultInputModes}, #{defaultOutputModes},
+            #{iconUrl}, #{documentationUrl}, #{supportsAuthenticatedExtendedCard},
+            #{createdAt}, #{updatedAt})
+    </insert>
+
+    <update id="update" parameterType="com.agenthub.infrastructure.entity.AgentPO">
+        UPDATE agents
+        SET name = #{name},
+            description = #{description},
+            endpoint = #{endpoint},
+            version = #{version},
+            type = #{type},
+            status = #{status},
+            protocol_version = #{protocolVersion},
+            preferred_transport = #{preferredTransport},
+            capabilities = #{capabilities},
+            security_schemes = #{securitySchemes},
+            security = #{security},
+            provider = #{provider},
+            default_input_modes = #{defaultInputModes},
+            default_output_modes = #{defaultOutputModes},
+            icon_url = #{iconUrl},
+            documentation_url = #{documentationUrl},
+            supports_authenticated_extended_card = #{supportsAuthenticatedExtendedCard},
+            updated_at = #{updatedAt}
+        WHERE id = #{id}
+    </update>
+
+    <delete id="deleteById">
+        DELETE FROM agents WHERE id = #{id}
+    </delete>
+
+    <select id="selectById" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM agents
+        WHERE id = #{id}
+    </select>
+
+    <select id="selectByName" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM agents
+        WHERE name = #{name}
+    </select>
+
+    <select id="selectByNameLike" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM agents
+        WHERE name LIKE CONCAT('%', #{name}, '%')
+        ORDER BY created_at DESC
+    </select>
+
+    <select id="selectByNameLikeWithPage" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM agents
+        WHERE name LIKE CONCAT('%', #{name}, '%')
+        ORDER BY created_at DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countByNameLike" resultType="long">
+        SELECT COUNT(*) FROM agents WHERE name LIKE CONCAT('%', #{name}, '%')
+    </select>
+
+    <select id="selectByStatus" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM agents
+        WHERE status = #{status}
+        ORDER BY created_at DESC
+    </select>
+
+    <select id="selectAll" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM agents
+        ORDER BY created_at DESC
+    </select>
+
+    <select id="selectByPage" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM agents ORDER BY created_at DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="selectByStatusAndPage" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM agents WHERE status = #{status} ORDER BY created_at DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="count" resultType="long">
+        SELECT COUNT(*) FROM agents
+    </select>
+
+    <select id="countByStatus" resultType="long">
+        SELECT COUNT(*) FROM agents WHERE status = #{status}
+    </select>
+
+</mapper>
