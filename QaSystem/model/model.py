@@ -11,7 +11,7 @@ from langchain_community.embeddings import DashScopeEmbeddings  # 调阿里云 E
 
 # 为了让 from base.config import Config 能找到，把项目根目录加入搜索路径
 _current_dir = os.path.dirname(os.path.abspath(__file__))   # model/ 目录
-sys.path.insert(0, os.path.join(_current_dir, ".."))         # 上级 = integrated_qa_system/
+sys.path.insert(0, os.path.join(_current_dir, ".."))         # 上级 = QaSystem/
 
 from base.config import Config
 # 统一配置实例，读 config.ini

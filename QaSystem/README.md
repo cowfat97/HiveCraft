@@ -1,4 +1,4 @@
-# integrated_qa_system
+# QaSystem
 
 综合问答系统，支持 MySQL 关键词检索 + Milvus 语义检索双路问答。
 
@@ -27,6 +27,6 @@ Python 3.11 / DashScope API / Milvus / MySQL / Redis / BGE-M3
 ## 运行
 
 ```bash
-pip install -r rag_qa/requirments.txt
+pip install -r rag_qa/requirements.txt
 python main.py
 ```
