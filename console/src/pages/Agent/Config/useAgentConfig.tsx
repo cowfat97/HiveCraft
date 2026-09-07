@@ -12,7 +12,9 @@ import {
 } from "../../../constants/backendMappings";
 import type { ToolExecutionLevel } from "./components/ToolExecutionLevelCard";
 
-export function useAgentConfig() {
+export function useAgentConfig(
+  onConfigLoaded?: (config: AgentsRunningConfig) => void,
+) {
   const { t } = useTranslation();
   const { message } = useAppMessage();
   const { selectedAgent } = useAgentStore();
@@ -27,8 +29,15 @@ export function useAgentConfig() {
   const [approvalLevel, setApprovalLevel] =
     useState<ToolExecutionLevel>("AUTO");
   const originalConfigRef = useRef<AgentsRunningConfig | null>(null);
+  const latestConfigRequestRef = useRef(0);
 
   const fetchConfig = useCallback(async () => {
+    const requestId = ++latestConfigRequestRef.current;
+    const requestedAgent = selectedAgent || "default";
+    const isCurrentRequest = () =>
+      requestId === latestConfigRequestRef.current &&
+      (useAgentStore.getState().selectedAgent || "default") === requestedAgent;
+
     setLoading(true);
     setError(null);
     try {
@@ -37,6 +46,8 @@ export function useAgentConfig() {
         api.getAgentLanguage(),
         api.getUserTimezone(),
       ]);
+      if (!isCurrentRequest()) return;
+
       const loadedLevel = (
         config.approval_level || "AUTO"
       ).toUpperCase() as ToolExecutionLevel;
@@ -78,6 +89,7 @@ export function useAgentConfig() {
         memory_manager_backend: memoryBackend,
         reme_light_memory_config: config.reme_light_memory_config,
         adbpg_memory_config: config.adbpg_memory_config,
+        powercontext_memory_config: config.powercontext_memory_config,
         auto_title_config: config.auto_title_config ?? {
           enabled: true,
           timeout_seconds: 30.0,
@@ -86,17 +98,20 @@ export function useAgentConfig() {
 
       // Store original config for complete save
       originalConfigRef.current = config;
+      onConfigLoaded?.(config);
 
       setLanguage(langResp.language);
       setTimezone(tzResp.timezone || "UTC");
     } catch (err) {
+      if (!isCurrentRequest()) return;
+
       const errMsg =
         err instanceof Error ? err.message : t("agentConfig.loadFailed");
       setError(errMsg);
     } finally {
-      setLoading(false);
+      if (isCurrentRequest()) setLoading(false);
     }
-  }, [form, t, selectedAgent]);
+  }, [form, t, selectedAgent, onConfigLoaded]);
 
   useEffect(() => {
     fetchConfig();
@@ -163,17 +178,25 @@ export function useAgentConfig() {
           original.adbpg_memory_config,
           formValues.adbpg_memory_config,
         ) as typeof original.adbpg_memory_config,
+        powercontext_memory_config: deepMergeConfig(
+          original.powercontext_memory_config,
+          formValues.powercontext_memory_config,
+        ) as typeof original.powercontext_memory_config,
         auto_title_config: deepMergeConfig(
           original.auto_title_config,
           formValues.auto_title_config,
         ) as typeof original.auto_title_config,
         approval_level: approvalLevel,
+        // Keep legacy max_iters aligned with the UI-bound iteration limit.
+        max_iters:
+          formValues.loop?.iteration?.max_iterations ?? original.max_iters,
       };
 
-      await api.updateAgentRunningConfig(configToSave);
+      const savedConfig = await api.updateAgentRunningConfig(configToSave);
 
       // Update original config after successful save
-      originalConfigRef.current = configToSave;
+      originalConfigRef.current = savedConfig;
+      onConfigLoaded?.(savedConfig);
       message.success(t("agentConfig.saveSuccess"));
     } catch (err) {
       if (err instanceof Error && "errorFields" in err) return;
@@ -183,7 +206,7 @@ export function useAgentConfig() {
     } finally {
       setSaving(false);
     }
-  }, [form, t, selectedAgent, approvalLevel]);
+  }, [form, t, selectedAgent, approvalLevel, onConfigLoaded]);
 
   const handleLanguageChange = useCallback(
     (value: string): void => {

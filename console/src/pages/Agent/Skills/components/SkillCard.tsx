@@ -56,9 +56,8 @@ export const getFileIcon = (filePath: string) => {
   const textSkillIcons = new Set([
     "news",
     "file_reader",
-    "browser_visible",
+    "browser",
     "guidance",
-    "himalaya",
     "dingtalk_channel",
   ]);
 
@@ -225,6 +224,9 @@ export const SkillCard = React.memo(function SkillCard({
             ) : (
               <span className={styles.customTag}>{t("skills.custom")}</span>
             )}
+            {skill.preload && (
+              <span className={styles.preloadTag}>{t("skills.preload")}</span>
+            )}
           </h3>
         </Tooltip>
       </div>
@@ -254,7 +256,7 @@ export const SkillCard = React.memo(function SkillCard({
       {/* Tags row */}
       <div className={styles.metaInfoRow}>
         <span className={styles.metaInfoLabel}>{t("skills.tags")}</span>
-        {!!skill.tags?.length ? (
+        {skill.tags?.length ? (
           <div className={styles.tagChips}>
             {skill.tags.map((tag) => (
               <span key={tag} className={styles.tagChip}>

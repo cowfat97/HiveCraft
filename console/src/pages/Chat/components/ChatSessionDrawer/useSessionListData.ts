@@ -12,6 +12,7 @@ import {
 } from "../../../../components/ContextMenu";
 import { getChannelLabel } from "../../../Control/Channels/components";
 import { syncSessionsGlobal } from "../../../../stores/sessionListStore";
+import { useAgentStore } from "../../../../stores/agentStore";
 import { useAppMessage } from "../../../../hooks/useAppMessage";
 
 export { ContextMenu, useContextMenu, type ContextMenuItem, getChannelLabel };
@@ -33,10 +34,13 @@ function sessionsEqual(
       a.id !== b.id ||
       a.name !== b.name ||
       a.updatedAt !== b.updatedAt ||
+      a.lastFinishedAt !== b.lastFinishedAt ||
       a.pinned !== b.pinned ||
       a.generating !== b.generating ||
       a.status !== b.status ||
-      a.archived !== b.archived
+      a.archived !== b.archived ||
+      a.groupId !== b.groupId ||
+      a.source !== b.source
     ) {
       return false;
     }
@@ -52,12 +56,17 @@ export interface ExtendedChatSession extends IAgentScopeRuntimeWebUISession {
   channel?: string;
   createdAt?: string | null;
   updatedAt?: string | null;
+  lastFinishedAt?: string | null;
   meta?: Record<string, unknown>;
   status?: ChatStatus;
   generating?: boolean;
   pinned?: boolean;
   archivedAt?: string | null;
   archived?: boolean;
+  source?: "chat" | "cron" | "subagent";
+  groupId?: string | null;
+  parentSessionId?: string | null;
+  rootSessionId?: string | null;
 }
 
 /** Resolve the real backend UUID from an extended session (id may be a local timestamp) */
@@ -103,8 +112,8 @@ export interface SessionListData {
   handleSessionClick: (sessionId: string) => void;
   handleEditStart: (sessionId: string, currentName: string) => void;
   handleDelete: (sessionId: string) => void;
-  handlePinToggle: (sessionId: string) => void;
   handleArchiveToggle: (sessionId: string) => void;
+  handlePinToggle: (sessionId: string, pinned: boolean) => void;
   handleEditChange: (value: string) => void;
   handleEditSubmit: () => void;
   handleEditCancel: () => void;
@@ -131,6 +140,10 @@ export function useSessionListData(
   const { t } = useTranslation();
   const { message } = useAppMessage();
   const { active, currentSessionId, onSessionClick } = opts;
+  // Re-fetch immediately when the selected agent changes — the shared store
+  // is cleared synchronously on the switch and must be repopulated for the
+  // new agent without waiting for the next poll tick.
+  const selectedAgent = useAgentStore((s) => s.selectedAgent);
 
   const [loading, setLoading] = useState(true);
   const [switchingSessionId, setSwitchingSessionId] = useState<string | null>(
@@ -148,8 +161,11 @@ export function useSessionListData(
   const lastSessionsRef = useRef<ExtendedChatSession[]>([]);
 
   const refreshSessions = useCallback(async () => {
+    const owner = sessionApi.getActiveOwner();
     try {
       const list = await sessionApi.getSessionList();
+      // Never publish a list that finished loading under a previous agent.
+      if (!sessionApi.isActiveOwner(owner)) return;
       const extended = list as ExtendedChatSession[];
       setSessions(extended);
       syncSessionsGlobal(extended);
@@ -161,12 +177,13 @@ export function useSessionListData(
   useEffect(() => {
     if (!active) return;
     let cancelled = false;
+    const owner = sessionApi.getActiveOwner();
 
     const fetchSessions = async () => {
       setLoading(true);
       try {
         const list = await sessionApi.getSessionList();
-        if (!cancelled) {
+        if (!cancelled && sessionApi.isActiveOwner(owner)) {
           const extended = list as ExtendedChatSession[];
           if (!sessionsEqual(lastSessionsRef.current, extended)) {
             lastSessionsRef.current = extended;
@@ -188,7 +205,7 @@ export function useSessionListData(
       if (sessionApi.isSessionSwitching) return;
       try {
         const list = await sessionApi.getSessionList();
-        if (!cancelled) {
+        if (!cancelled && sessionApi.isActiveOwner(owner)) {
           const extended = list as ExtendedChatSession[];
           if (!sessionsEqual(lastSessionsRef.current, extended)) {
             lastSessionsRef.current = extended;
@@ -205,7 +222,7 @@ export function useSessionListData(
       cancelled = true;
       clearInterval(timer);
     };
-  }, [active, setSessions]);
+  }, [active, setSessions, selectedAgent]);
 
   const resolvedSessions = useMemo(() => {
     return sessions.filter((s) => {
@@ -218,8 +235,6 @@ export function useSessionListData(
     return [...resolvedSessions]
       .filter((s) => !s.archived)
       .sort((a, b) => {
-        if (a.pinned && !b.pinned) return -1;
-        if (!a.pinned && b.pinned) return 1;
         const aTime = a.updatedAt ?? a.createdAt ?? "";
         const bTime = b.updatedAt ?? b.createdAt ?? "";
         if (!aTime && !bTime) return 0;
@@ -255,24 +270,32 @@ export function useSessionListData(
 
   const handleDelete = useCallback(
     async (sessionId: string) => {
+      const owner = sessionApi.getActiveOwner();
       const session = sessions.find((s) => s.id === sessionId);
       const backendId = session ? getBackendId(session) : null;
       if (backendId) await chatApi.deleteChat(backendId);
 
+      // Per-session cleanup is safe regardless of the active agent: it is
+      // keyed to the deleted conversation only.
       localStorage.removeItem(`approval_level-${sessionId}`);
 
       // Clear the message queue for the deleted session so stale items don't
       // linger in storage or get sent after deletion. The queue may be keyed
-      // by the local id or the resolved backend id, so clear both. Also notify
-      // the chat page (when mounted) to abort any in-flight background send.
+      // by the local id or the resolved backend id, so clear both.
       const mq = useMessageQueueStore.getState();
       mq.clear(sessionId);
       if (backendId && backendId !== sessionId) mq.clear(backendId);
+
+      // Everything below mutates the CURRENT view (callbacks, shared list,
+      // navigation). A delete that finished after an agent switch must not
+      // touch the new agent's state.
+      if (!sessionApi.isActiveOwner(owner)) return;
       sessionApi.onSessionRemoved?.(backendId ?? sessionId);
 
       // Fetch fresh session list after deletion
       const freshList =
         (await sessionApi.getSessionList()) as ExtendedChatSession[];
+      if (!sessionApi.isActiveOwner(owner)) return;
       setSessions(freshList);
       syncSessionsGlobal(freshList);
 
@@ -308,6 +331,7 @@ export function useSessionListData(
 
   const handleEditSubmit = useCallback(async () => {
     if (!editingSessionId) return;
+    const owner = sessionApi.getActiveOwner();
     const session = sessions.find((s) => s.id === editingSessionId);
     const backendId = session ? getBackendId(session) : null;
     const newName = editValue.trim();
@@ -316,6 +340,7 @@ export function useSessionListData(
     }
     setEditingSessionId(null);
     setEditValue("");
+    if (!sessionApi.isActiveOwner(owner)) return;
     await refreshSessions();
   }, [editingSessionId, editValue, sessions, refreshSessions]);
 
@@ -324,24 +349,9 @@ export function useSessionListData(
     setEditValue("");
   }, []);
 
-  const handlePinToggle = useCallback(
-    async (sessionId: string) => {
-      const session = sessions.find((s) => s.id === sessionId);
-      const backendId = session ? getBackendId(session) : null;
-      if (backendId && session) {
-        try {
-          await chatApi.updateChat(backendId, { pinned: !session.pinned });
-          await refreshSessions();
-        } catch (err) {
-          console.error("Failed to toggle pin status:", err);
-        }
-      }
-    },
-    [sessions, refreshSessions],
-  );
-
   const handleArchiveToggle = useCallback(
     async (sessionId: string) => {
+      const owner = sessionApi.getActiveOwner();
       const session = sessions.find((s) => s.id === sessionId);
       const backendId = session ? getBackendId(session) : null;
       if (!backendId) return;
@@ -349,13 +359,15 @@ export function useSessionListData(
       try {
         if (wasArchived) {
           await chatApi.unarchiveChat(backendId);
-          message.success(
-            t("sessions.archive.unarchiveSuccess", "Chat unarchived"),
-          );
         } else {
           await chatApi.archiveChat(backendId);
-          message.success(t("sessions.archive.successHint"));
         }
+        if (!sessionApi.isActiveOwner(owner)) return;
+        message.success(
+          wasArchived
+            ? t("sessions.archive.unarchiveSuccess", "Chat unarchived")
+            : t("sessions.archive.successHint"),
+        );
         await refreshSessions();
 
         if (!wasArchived && currentSessionId) {
@@ -373,6 +385,26 @@ export function useSessionListData(
       }
     },
     [sessions, currentSessionId, refreshSessions, message, t],
+  );
+
+  const handlePinToggle = useCallback(
+    async (sessionId: string, pinned: boolean) => {
+      const owner = sessionApi.getActiveOwner();
+      const session = sessions.find((item) => item.id === sessionId);
+      const backendId = session ? getBackendId(session) : null;
+      if (!backendId) return;
+      try {
+        await chatApi.updateChat(backendId, { pinned });
+        if (!sessionApi.isActiveOwner(owner)) return;
+        await refreshSessions();
+      } catch (error) {
+        console.error("Failed to update conversation pin:", error);
+        message.error(
+          t("chat.contextMenu.pinFailed", "Could not update pinned state"),
+        );
+      }
+    },
+    [message, refreshSessions, sessions, t],
   );
 
   const handleItemContextMenu = useCallback(
@@ -403,7 +435,7 @@ export function useSessionListData(
         label: session?.pinned
           ? t("chat.contextMenu.unpin", "Unpin")
           : t("chat.contextMenu.pin", "Pin"),
-        onClick: () => handlePinToggle(contextMenuSessionId),
+        onClick: () => handlePinToggle(contextMenuSessionId, !session?.pinned),
       },
       {
         key: "archive",
@@ -426,8 +458,8 @@ export function useSessionListData(
     t,
     handleSessionClick,
     handleEditStart,
-    handlePinToggle,
     handleArchiveToggle,
+    handlePinToggle,
     handleDelete,
   ]);
 
@@ -441,8 +473,8 @@ export function useSessionListData(
     handleSessionClick,
     handleEditStart,
     handleDelete,
-    handlePinToggle,
     handleArchiveToggle,
+    handlePinToggle,
     handleEditChange,
     handleEditSubmit,
     handleEditCancel,

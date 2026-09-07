@@ -22,6 +22,7 @@ import type {
 import api from "../../../../../api";
 import { useTranslation } from "react-i18next";
 import { getLocalizedTestConnectionMessage } from "./testConnectionMessage";
+import { getValidApiKeyPrefixes, validateApiKey } from "../../apiKeyValidation";
 import styles from "../../index.module.less";
 
 interface ProviderConfigFormValues
@@ -361,15 +362,10 @@ export function ProviderConfigModal({
     [provider.id, provider.chat_model, effectiveChatModel],
   );
 
-  const validApiKeyPrefixes = useMemo(() => {
-    if (provider.api_key_prefixes && provider.api_key_prefixes.length > 0) {
-      return provider.api_key_prefixes;
-    }
-    if (provider.api_key_prefix) {
-      return [provider.api_key_prefix];
-    }
-    return [];
-  }, [provider.api_key_prefix, provider.api_key_prefixes]);
+  const validApiKeyPrefixes = useMemo(
+    () => getValidApiKeyPrefixes(provider),
+    [provider.api_key_prefix, provider.api_key_prefixes],
+  );
 
   const apiKeyPlaceholder = useMemo(() => {
     if (provider.api_key) {
@@ -461,6 +457,7 @@ export function ProviderConfigModal({
     if (open) {
       form.setFieldsValue({
         api_key: undefined,
+        name: provider.name,
         base_url: provider.base_url || undefined,
         chat_model: provider.chat_model || "OpenAIChatModel",
         generate_kwargs_text:
@@ -523,6 +520,7 @@ export function ProviderConfigModal({
 
       await api.configureProvider(provider.id, {
         api_key: values.api_key,
+        name: provider.is_custom ? values.name?.trim() : undefined,
         base_url: values.base_url,
         chat_model: values.chat_model,
         generate_kwargs: hasGenerateConfigInput ? generateConfig : {},
@@ -533,7 +531,11 @@ export function ProviderConfigModal({
       await onSaved();
       setFormDirty(false);
       onClose();
-      message.success(t("models.configurationSaved", { name: provider.name }));
+      message.success(
+        t("models.configurationSaved", {
+          name: (provider.is_custom && values.name?.trim()) || provider.name,
+        }),
+      );
     } catch (error) {
       if (error && typeof error === "object" && "errorFields" in error) return;
       const errMsg =
@@ -664,6 +666,7 @@ export function ProviderConfigModal({
         form={form}
         layout="vertical"
         initialValues={{
+          name: provider.name,
           base_url: provider.base_url || undefined,
           chat_model: provider.chat_model || "OpenAIChatModel",
           generate_kwargs_text:
@@ -674,6 +677,22 @@ export function ProviderConfigModal({
         }}
         onValuesChange={() => setFormDirty(true)}
       >
+        {provider.is_custom && (
+          <Form.Item
+            name="name"
+            label={t("models.providerNameLabel")}
+            rules={[
+              {
+                required: true,
+                whitespace: true,
+                message: t("models.providerNameLabel"),
+              },
+            ]}
+          >
+            <Input placeholder={t("models.providerNamePlaceholder")} />
+          </Form.Item>
+        )}
+
         {provider.is_custom && (
           <Form.Item
             name="chat_model"
@@ -767,18 +786,16 @@ export function ProviderConfigModal({
           rules={[
             {
               validator: (_, value) => {
-                if (
-                  value &&
-                  validApiKeyPrefixes.length > 0 &&
-                  authMode !== "auth_token" &&
-                  !validApiKeyPrefixes.some((prefix) =>
-                    value.startsWith(prefix),
-                  )
-                ) {
+                const result = validateApiKey(
+                  value,
+                  validApiKeyPrefixes,
+                  authMode,
+                );
+                if (!result.valid) {
                   return Promise.reject(
                     new Error(
                       t("models.apiKeyShouldStart", {
-                        prefix: validApiKeyPrefixes.join(", "),
+                        prefix: result.prefix,
                       }),
                     ),
                   );

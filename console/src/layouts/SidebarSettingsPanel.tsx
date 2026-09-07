@@ -1,20 +1,16 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
 
-import { SunMoon } from "lucide-react";
+import { Monitor, SunMoon } from "lucide-react";
 import { Select } from "antd";
 import {
   SparkSunLine,
   SparkMoonLine,
-  SparkChinese02Line,
-  SparkEnglish02Line,
-  SparkJapanLine,
-  SparkRusLine,
-  SparkPtLine,
   SparkFullscreenLine,
   SparkExitFullscreenLine,
 } from "@agentscope-ai/icons";
-import { languageApi } from "../api/modules/language";
+import { settingsApi } from "../api/modules/language";
+import { LANGUAGE_LIST } from "../constants/languageList";
 import { useTheme, type ThemeMode } from "../contexts/ThemeContext";
 import { useSidebarModeStore } from "../stores/sidebarModeStore";
 import { isTauriRuntime } from "../tauri/backendRuntime";
@@ -25,19 +21,13 @@ import {
   type CloseAction,
 } from "../tauri/closeWindowPreference";
 import styles from "./sidebarSettingsPanel.module.less";
+import { getOsRootHref } from "../utils/navigationMode";
 
 type CloseBehavior = "ask" | CloseAction;
 
 // ── Language config ────────────────────────────────────────────────────────
 
-const LANGS = [
-  { key: "en", label: "English", icon: <SparkEnglish02Line size={14} /> },
-  { key: "zh", label: "简体中文", icon: <SparkChinese02Line size={14} /> },
-  { key: "ja", label: "日本語", icon: <SparkJapanLine size={14} /> },
-  { key: "ru", label: "Русский", icon: <SparkRusLine size={14} /> },
-  { key: "pt-BR", label: "Português", icon: <SparkPtLine size={14} /> },
-];
-const KNOWN_KEYS = new Set(LANGS.map((l) => l.key));
+const KNOWN_KEYS = new Set(LANGUAGE_LIST.map((lang) => lang.key));
 
 // ── Component ─────────────────────────────────────────────────────────────
 
@@ -62,7 +52,7 @@ export default function SidebarSettingsPanel({
   const changeLanguage = (lang: string) => {
     i18n.changeLanguage(lang);
     localStorage.setItem("language", lang);
-    languageApi.updateLanguage(lang).catch(() => {});
+    settingsApi.updateLanguage(lang).catch(() => {});
   };
 
   const changeCloseBehavior = (value: CloseBehavior) => {
@@ -104,7 +94,7 @@ export default function SidebarSettingsPanel({
           {t("sidebar.settings.language", "Language")}
         </span>
         <div className={styles.options}>
-          {LANGS.map(({ key, label, icon }) => (
+          {LANGUAGE_LIST.map(({ key, label, icon }) => (
             <button
               key={key}
               title={label}
@@ -113,7 +103,7 @@ export default function SidebarSettingsPanel({
               }`}
               onClick={() => changeLanguage(key)}
             >
-              {icon}
+              {React.cloneElement(icon, { size: 14 })}
             </button>
           ))}
         </div>
@@ -178,29 +168,43 @@ export default function SidebarSettingsPanel({
         <span className={styles.label}>
           {t("sidebar.settings.mode", "Mode")}
         </span>
-        <button
-          className={`${styles.optBtn} ${styles.optBtnBlock}`}
-          onClick={() => {
-            toggleSidebarMode();
-            onClose?.();
-          }}
-        >
-          {sidebarMode === "simple" ? (
-            <>
-              <SparkFullscreenLine size={14} />
-              <span className={styles.optLabel}>
-                {t("sidebar.fullMode", "Full Mode")}
-              </span>
-            </>
-          ) : (
-            <>
-              <SparkExitFullscreenLine size={14} />
-              <span className={styles.optLabel}>
-                {t("sidebar.simpleMode", "Simple Mode")}
-              </span>
-            </>
-          )}
-        </button>
+        <div className={styles.modeActions}>
+          <button
+            className={`${styles.optBtn} ${styles.optBtnBlock}`}
+            onClick={() => {
+              toggleSidebarMode();
+              onClose?.();
+            }}
+          >
+            {sidebarMode === "simple" ? (
+              <>
+                <SparkFullscreenLine size={14} />
+                <span className={styles.optLabel}>
+                  {t("sidebar.fullMode", "Full Mode")}
+                </span>
+              </>
+            ) : (
+              <>
+                <SparkExitFullscreenLine size={14} />
+                <span className={styles.optLabel}>
+                  {t("sidebar.simpleMode", "Simple Mode")}
+                </span>
+              </>
+            )}
+          </button>
+          <button
+            className={`${styles.optBtn} ${styles.optBtnBlock} ${styles.desktopModeBtn}`}
+            onClick={() => {
+              onClose?.();
+              window.location.assign(getOsRootHref(window.location.pathname));
+            }}
+          >
+            <Monitor size={14} />
+            <span className={styles.optLabel}>
+              {t("sidebar.settings.desktopMode", "Desktop Mode")}
+            </span>
+          </button>
+        </div>
       </div>
     </div>
   );
