@@ -1,3 +1,12 @@
+export type ModelAvailabilityStatus =
+  | "available"
+  | "permission_denied"
+  | "model_not_found"
+  | "incompatible_api"
+  | "rate_limited"
+  | "transient_error"
+  | "unverified";
+
 export interface ModelInfo {
   id: string;
   name: string;
@@ -6,9 +15,16 @@ export interface ModelInfo {
   supports_video: boolean | null;
   probe_source?: string | null;
   is_free?: boolean;
-  max_tokens: number;
+  is_recommended?: boolean;
+  source?: "builtin" | "discovered" | "user";
+  discovery_origin?: "api" | "catalog" | "both" | null;
+  availability_status?: ModelAvailabilityStatus;
+  max_output_length?: number | null;
+  max_output_length_source?: "api" | "catalog" | "adapter" | "user" | "unknown";
+  max_output_length_updated_at?: string | null;
   max_input_length: number;
   max_input_length_configured?: boolean;
+  max_input_length_auto_detected?: number | null;
   generate_kwargs: Record<string, unknown>;
   relay_reasoning: boolean;
   thinking_enabled: boolean | null;
@@ -20,6 +36,8 @@ export interface ModelInfo {
   reasoning_effort_options?: string[] | null;
   /** Per-model override for thinking_budget [min, max] range. */
   thinking_budget_range?: [number, number] | null;
+  /** Backend-derived support for agent-level thinking overrides. */
+  supports_agent_thinking?: boolean | null;
 }
 
 export interface ProviderInfo {
@@ -31,6 +49,12 @@ export interface ProviderInfo {
   models: ModelInfo[];
   /** User-added models (deletable). Only populated for built-in providers. */
   extra_models: ModelInfo[];
+  /** Last successful model catalog fetched from the provider API. */
+  discovered_models?: ModelInfo[];
+  models_last_synced_at?: string | null;
+  models_last_sync_error?: string | null;
+  models_syncing?: boolean;
+  hidden_model_ids?: string[];
   is_custom: boolean;
   is_local: boolean;
   /** Whether this provider supports fetching available models from the provider's API. */
@@ -81,11 +105,18 @@ export interface BaseUrlOption {
 export interface ProviderConfigRequest {
   api_key?: string;
   base_url?: string;
+  /** New display name. Only applied to custom providers. */
+  name?: string;
   chat_model?: string;
   generate_kwargs?: Record<string, unknown>;
   custom_headers?: Record<string, string>;
   auth_mode?: "api_key" | "auth_token";
 }
+
+export type CustomChatModelName =
+  | "OpenAIChatModel"
+  | "OpenAIResponseModel"
+  | "AnthropicChatModel";
 
 export interface ModelSlotConfig {
   provider_id: string;
@@ -93,7 +124,7 @@ export interface ModelSlotConfig {
 }
 
 export interface ActiveModelsInfo {
-  active_llm?: ModelSlotConfig;
+  active_llm: ModelSlotConfig | null;
   effective_max_input_length?: number | null;
 }
 
@@ -118,7 +149,7 @@ export interface CreateCustomProviderRequest {
   name: string;
   default_base_url?: string;
   api_key_prefix?: string;
-  chat_model?: string;
+  chat_model?: CustomChatModelName;
   models?: ModelInfo[];
 }
 
@@ -133,7 +164,6 @@ export interface AddModelRequest {
 }
 
 export interface ModelConfigRequest {
-  max_tokens?: number;
   max_input_length?: number;
   generate_kwargs?: Record<string, unknown>;
   relay_reasoning?: boolean;
@@ -210,6 +240,7 @@ export interface StartLocalServerRequest {
 export interface TestConnectionResponse {
   success: boolean;
   message: string;
+  status?: ModelAvailabilityStatus;
 }
 
 export interface TestProviderRequest {
@@ -222,6 +253,12 @@ export interface TestProviderRequest {
   auth_mode?: "api_key" | "auth_token";
 }
 
+export interface DiscoverModelsRequest {
+  api_key?: string;
+  base_url?: string;
+  chat_model?: string;
+}
+
 export interface TestModelRequest {
   model_id: string;
 }
@@ -230,7 +267,8 @@ export interface DiscoverModelsResponse {
   success: boolean;
   message: string;
   models: ModelInfo[];
-  added_count: number;
+  discovered_count: number;
+  error_kind?: string | null;
 }
 
 export interface ProbeMultimodalResponse {
@@ -243,14 +281,9 @@ export interface ProbeMultimodalResponse {
 
 /* ---- OpenRouter extended model types ---- */
 
-export interface ExtendedModelInfo {
+export interface ExtendedModelInfo extends Partial<ModelInfo> {
   id: string;
   name: string;
-  supports_multimodal?: boolean | null;
-  supports_image?: boolean | null;
-  supports_video?: boolean | null;
-  probe_source?: string | null;
-  is_free?: boolean;
   provider: string;
   input_modalities: string[];
   output_modalities: string[];
